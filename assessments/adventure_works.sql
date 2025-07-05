@@ -25,3 +25,33 @@ GROUP BY c.CompanyName, p.Name
 HAVING 
     c.CompanyName = 'Riding Cycles'
     AND p.Name = 'Racing Socks, L'
+
+-- Medium Questions
+-- 6. A "Single Item Order" is a customer order where only one item is ordered. Show the SalesOrderID and the UnitPrice for every Single Item Order.
+SELECT 
+    SalesOrderID, 
+    COUNT(DISTINCT SalesOrderDetailID) AS items, 
+    AVG(UnitPrice) -- as there is only one item, both AVG and SUM should return the same value
+FROM SalesOrderDetail
+GROUP BY SalesOrderID
+HAVING COUNT(DISTINCT SalesOrderDetailID) = 1
+ORDER BY COUNT(DISTINCT SalesOrderDetailID)
+
+-- 7. Where did the racing socks go? List the product name and the CompanyName for all Customers who ordered ProductModel 'Racing Socks'.
+SELECT c.CompanyName AS company_name, p.Name AS product_name
+FROM SalesOrderDetail AS sod
+JOIN SalesOrderHeader AS so ON sod.SalesOrderID = so.SalesOrderID
+JOIN Customer AS c ON so.CustomerID = c.CustomerID
+JOIN Product AS p ON sod.ProductID = p.ProductID
+JOIN ProductModel AS pm ON p.ProductModelID = pm.ProductModelID
+WHERE pm.name = 'Racing Socks'
+
+-- 8. Show the product description for culture 'fr' for product with ProductID 736.
+-- skip joining ProductModel as we can directly link ProductModelID between Product and ProductModelProductDescription
+SELECT p.Name, p.ProductID, pmpd.Culture, pd.Description
+FROM Product AS p
+JOIN ProductModelProductDescription AS pmpd ON p.ProductModelID = pmpd.ProductModelID
+JOIN ProductDescription AS pd ON pmpd.ProductDescriptionID = pd.ProductDescriptionID
+WHERE 
+    p.ProductID = 736
+    AND pmpd.Culture = 'fr'
