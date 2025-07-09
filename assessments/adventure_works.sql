@@ -55,3 +55,21 @@ JOIN ProductDescription AS pd ON pmpd.ProductDescriptionID = pd.ProductDescripti
 WHERE 
     p.ProductID = 736
     AND pmpd.Culture = 'fr'
+
+-- 9. Use the SubTotal value in SaleOrderHeader to list orders from the largest to the smallest. 
+-- For each order show the CompanyName and the SubTotal and the total weight of the order.
+
+WITH order_weight AS (
+    SELECT SalesOrderID, SUM(p.weight * sod.OrderQty) AS total_weight
+    FROM SalesOrderDetail AS sod
+    LEFT JOIN Product AS p ON sod.ProductID = p.ProductID
+    GROUP BY SalesOrderID
+)
+SELECT
+    c.CompanyName, 
+    so.SubTotal, 
+    w.total_weight
+FROM SalesOrderHeader AS so
+LEFT JOIN order_weight AS w ON so.SalesOrderID = w.SalesOrderID
+LEFT JOIN Customer AS c ON so.CustomerID = c.CustomerID
+ORDER BY so.SubTotal DESC
