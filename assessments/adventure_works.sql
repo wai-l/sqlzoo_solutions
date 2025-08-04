@@ -73,3 +73,76 @@ FROM SalesOrderHeader AS so
 LEFT JOIN order_weight AS w ON so.SalesOrderID = w.SalesOrderID
 LEFT JOIN Customer AS c ON so.CustomerID = c.CustomerID
 ORDER BY so.SubTotal DESC
+
+-- 10. How many products in ProductCategory 'Cranksets' have been sold to an address in 'London'?
+-- What does sold to means? it could be the customer's address, shipping address or billing address. 
+-- this query will check all three addresses, however in reality that will be something the business stakeholders need to clarify.
+WITH london_customers AS (
+    SELECT AddressID, City
+    FROM Address
+    WHERE City = 'London' -- This is assuming London only appears in the City column, which is not always true in real-world data
+), 
+cranksets_products AS (
+    SELECT 
+        Product.ProductID, 
+        ProductCategory.Name
+    FROM Product
+    LEFT JOIN ProductCategory ON Product.ProductCategoryID = ProductCategory.ProductCategoryID
+    WHERE ProductCategory.Name = 'Cranksets'
+), 
+cranksets_orders_london AS (
+    SELECT 
+        so.SalesOrderID, 
+        sod.SalesOrderDetailID, 
+        sod.ProductID, 
+        p.Name, 
+        sod.OrderQty, 
+        billing_address.City AS billing_city, 
+        shipping_address.City AS shipping_city, 
+        customer_address.City AS customer_city
+    FROM SalesOrderDetail AS sod
+    LEFT JOIN SalesOrderHeader AS so ON sod.SalesOrderID = so.SalesOrderID
+    LEFT JOIN cranksets_products AS p ON sod.ProductID = p.ProductID
+    LEFT JOIN london_customers AS billing_address ON so.BillToAddressID = billing_address.AddressID
+    LEFT JOIN london_customers AS shipping_address ON so.ShipToAddressID = shipping_address.AddressID
+    -- also join customers that has a company address in London
+    LEFT JOIN CustomerAddress ON so.CustomerID = CustomerAddress.CustomerID
+    LEFT JOIN london_customers AS customer_address ON CustomerAddress.AddressID = customer_address.AddressID
+    WHERE 
+        p.Name = 'Cranksets'
+        AND (
+            billing_address.City = 'London' 
+            OR shipping_address.City = 'London'
+            OR customer_address.City = 'London'
+        )
+)
+SELECT name, sum(OrderQty) AS total_sold
+FROM cranksets_orders_london
+GROUP BY name
+
+-- 11. For every customer with a 'Main Office' in Dallas show AddressLine1 of the 'Main Office' and AddressLine1 of the 'Shipping' address - if there is no shipping address leave it blank. Use one row per customer.
+-- Here we define Main Office as the customer address with the address type shown as 'Main Office'. 
+-- We also assume that 'Dallas' only appears in the City column, which is not always true in real-world data.
+-- There is also just one shipping address, may have to tweak the query if there's more than one
+-- Another way is to find the shipping address from the ShipToAdressID in the SalesOrderHeader table, which we do not know if it will match the shipping address in the CustomerAddress table.
+WITH dallas_customers AS (
+    SELECT ca.CustomerID, ca.AddressID, ca.AddressType, a.AddressLine1, a.City, a.StateProvince
+    FROM CustomerAddress AS ca
+    LEFT JOIN Address AS a ON ca.AddressID = a.AddressID
+    WHERE a.City = 'Dallas' AND ca.AddressType = 'Main Office'
+), 
+sa_dallas_cust AS (
+    SELECT ca.CustomerID, ca.AddressID, a.AddressLine1, a.City
+    FROM CustomerAddress AS ca
+    LEFT JOIN Address AS a ON ca.AddressID = a.AddressID
+    WHERE ca.CustomerID IN (SELECT CustomerID FROM dallas_customers)
+        AND AddressType = 'Shipping'
+)
+SELECT 
+dallas_customers.CustomerID, 
+dallas_customers.AddressLine1 AS mo_address_line_1, 
+dallas_customers.City AS mo_city, 
+sa_dallas_cust.AddressLine1 AS shipping_address_line_1, 
+sa_dallas_cust.City AS shipping_city
+FROM dallas_customers
+LEFT JOIN sa_dallas_cust ON dallas_customers.CustomerID = sa_dallas_cust.CustomerID
