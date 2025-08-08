@@ -146,3 +146,81 @@ sa_dallas_cust.AddressLine1 AS shipping_address_line_1,
 sa_dallas_cust.City AS shipping_city
 FROM dallas_customers
 LEFT JOIN sa_dallas_cust ON dallas_customers.CustomerID = sa_dallas_cust.CustomerID
+
+-- 12. For each order show the SalesOrderID and SubTotal calculated three ways:
+-- A) From the SalesOrderHeader
+-- B) Sum of OrderQty*UnitPrice
+-- C) Sum of OrderQty*ListPrice
+-- notes: 
+-- while the logic is correct, the sub total does not match the qty * unit price or qty * discounted unit price; the sub total is larger then the two calculations
+-- there is no field in the two tables that explain this difference
+WITH sod_summary AS (
+SELECT 
+    sod.SalesOrderID, 
+    SUM(sod.OrderQty * sod.UnitPrice) AS total_unit_price, 
+    SUM(sod.OrderQty * p.ListPrice) AS total_list_price, 
+    SUM(sod.OrderQty * sod.UnitPrice * (1 - sod.UnitPriceDiscount)) AS total_discounted_unit_price
+FROM SalesOrderDetail AS sod
+LEFT JOIN Product AS p ON sod.ProductID = p.ProductID
+GROUP BY sod.SalesOrderID
+)
+SELECT 
+    so.SalesOrderID, 
+    so.SubTotal AS sub_total, -- it does not match qty*unitprice
+    sod_summary.total_unit_price, 
+    sod_summary.total_list_price,
+    sod_summary.total_discounted_unit_price
+FROM SalesOrderHeader AS so LEFT JOIN sod_summary ON so.SalesOrderID = sod_summary.SalesOrderID
+
+-- an additional query to compare the sub total with the calculated values
+
+WITH sod_summary AS (
+SELECT 
+    sod.SalesOrderID, 
+    SUM(sod.OrderQty * sod.UnitPrice) AS total_unit_price, 
+    SUM(sod.OrderQty * p.ListPrice) AS total_list_price, 
+    SUM(sod.OrderQty * sod.UnitPrice * (1 - sod.UnitPriceDiscount)) AS total_discounted_unit_price
+FROM SalesOrderDetail AS sod
+LEFT JOIN Product AS p ON sod.ProductID = p.ProductID
+GROUP BY sod.SalesOrderID
+), 
+total_price_summary AS (
+    SELECT 
+        so.SalesOrderID, 
+        so.SubTotal AS sub_total, -- it does not match qty*unitprice, this need further investigation
+        sod_summary.total_unit_price, 
+        sod_summary.total_list_price,
+        sod_summary.total_discounted_unit_price, 
+        CASE 
+            WHEN so.SubTotal > total_discounted_unit_price THEN 'SubTotal is greater'
+            WHEN so.SubTotal < total_discounted_unit_price THEN 'SubTotal is less'
+            ELSE 'SubTotal matches'
+        END AS comparison_result
+    FROM SalesOrderHeader AS so LEFT JOIN sod_summary ON so.SalesOrderID = sod_summary.SalesOrderID
+)
+SELECT
+    comparison_result, 
+    COUNT(*) AS count
+FROM total_price_summary
+GROUP BY comparison_result
+ORDER BY count DESC;
+
+-- 13. Show the best selling item by value.
+-- what is the definition of value and item? 
+-- item: product
+-- value: currently define as total discounted unit price, we can change it to total quantity sold, other pricing figures or any other product figures available in the product table
+WITH sales_order_summary AS (
+SELECT 
+ProductID, 
+OrderQty * UnitPrice * (1 - UnitPriceDiscount) AS value -- we can change this line to change the definition of value
+FROM SalesOrderDetail
+)
+SELECT 
+sos.ProductID, 
+p.Name, 
+SUM(sos.value) AS total_value
+FROM sales_order_summary AS sos
+LEFT JOIN Product AS p ON sos.ProductID = p.ProductID
+GROUP BY sos.ProductID, p.Name
+ORDER BY total_value DESC
+LIMIT 1
