@@ -21,7 +21,7 @@ You can access the full tutorials and assessments in the SQL Zoo website:
 |----------|----------|----------|
 | Help Desk | ✅ Completed | [View](assessments/help_desk.sql) |
 | Guest House | ✅ Completed | [View](assessments/guest_house.sql) |
-| Adventure Works | 🔄 In Progress | [View](assessments/adventure_works.sql) |
+| Adventure Works | ✅ Completed | [View](assessments/adventure_works.sql) |
 | University Timetables | ⏳ Pending |
 | Musicians | ⏳ Pending |
 | Dressmaker | ⏳ Pending |

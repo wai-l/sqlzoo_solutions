@@ -224,3 +224,58 @@ LEFT JOIN Product AS p ON sos.ProductID = p.ProductID
 GROUP BY sos.ProductID, p.Name
 ORDER BY total_value DESC
 LIMIT 1
+
+-- 14. Show how many orders are in the following ranges (in $):
+--     RANGE      Num Orders      Total Value
+--     0-  99
+--     100- 999
+--     1000-9999
+--     10000-
+WITH range_tag AS (
+    SELECT
+        SalesOrderID, 
+        SubTotal, 
+        CASE 
+            WHEN SubTotal <= 99 THEN '0 - 99'
+            WHEN SubTotal > 99 AND SubTotal <= 999 THEN '100 - 999'
+            WHEN SubTotal > 999 AND SubTotal <= 9999 THEN '1000 - 9999'
+            ELSE '10000 - '
+        END AS value_range
+    FROM SalesOrderHeader
+)
+SELECT 
+    value_range, 
+    COUNT(SalesOrderID) AS total_order, 
+    SUM(SubTotal) AS total_value
+FROM range_tag
+GROUP BY value_range
+ORDER BY value_range;
+
+-- 15. Identify the three most important cities. Show the break down of top level product category against city.
+-- Comment: 
+-- Let's define the below first, while further clarification is impossible: 
+-- City:  based on the shipping address, instead of the billing address or the company address, this is assuming that the shipping address is where the product is actually needed. 
+-- Most important: by total sales value, we can change this to total quantity sold or any other product figures available in the product table
+
+WITH top_3_cities AS (
+    SELECT 
+        a.City, 
+        SUM(so.SubTotal) AS sub_total
+    FROM Address AS a INNER JOIN SalesOrderHeader AS so ON a.AddressID = so.ShipToAddressID
+    GROUP BY a.City
+    ORDER BY sub_total DESC
+    LIMIT 3
+)
+SELECT
+    a.City AS city, 
+    pc.Name AS product_category, 
+    SUM(sod.OrderQty) AS order_qty, 
+    SUM(sod.UnitPrice * (1 - sod.UnitPriceDiscount) * sod.OrderQty) AS order_value
+FROM SalesOrderDetail AS sod
+LEFT JOIN Product AS p ON sod.ProductID = p.ProductID
+LEFT JOIN ProductCategory AS pc ON p.ProductCategoryID = pc.ProductCategoryID
+LEFT JOIN SalesOrderHeader AS so ON sod.SalesOrderID = so.SalesOrderID
+LEFT JOIN Address AS a ON so.ShipToAddressID = a.AddressID
+WHERE a.City IN (SELECT City FROM top_3_cities)
+GROUP BY a.City, pc.Name
+ORDER BY a.City, order_value DESC
