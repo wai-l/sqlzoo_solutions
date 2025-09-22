@@ -183,3 +183,148 @@ ON
     AND cht.week = acg.week
     AND cht.start_hour < acg.end_hour
     AND acg.start_hour < cht.end_hour;
+
+-- 12. Produce a table showing the utilisation rate and the occupancy level for all rooms with a capacity more than 60.
+-- Definitions: 
+    -- Utilisation rate
+        -- How often a room is used relative to the total available time. 
+        -- Utilisation rate = total hours of events in the room / total hours available (we will get the total hours available by querying the event table)
+    -- Occupancy level: 
+        -- What it measures: How full a room is when it’s being used.
+        -- Occupancy level = average number of students when occupied / room capacity
+-- Use inner join: ignore events with no room or no students attending
+
+-- 1. Querty to check occupacny rate
+-- A lot of rooms are overused, it could be that the room capacity is not accurate. For example, room co.B7 is showing different capacity in the SQLZOO front end VS query. 
+-- The final query will be assuming that the capacity from the query is correct instead of the front end one. 
+-- It will mean that over half of the rooms are overused. 
+-- There is also only 1 room with capaicty more than 60 in the queried table. 
+
+-- Student size needs to be summarised before used to join the event table, this is because there are multiple group of students attending an event at the same time. 
+WITH 
+    event_sze AS (
+        SELECT
+            attends.event, 
+            SUM(student.sze) AS student_sze
+        FROM attends
+        INNER JOIN student ON attends.student = student.id
+        GROUP BY attends.event
+    ), 
+    schedule AS (
+        SELECT 
+            event.id AS event, 
+            event.dow, event.tod, event.duration, event.room, 
+            event_sze.student_sze
+        FROM event
+        INNER JOIN event_sze ON event.id = event_sze.event
+        ), 
+    room_occupancy AS (
+        SELECT
+            schedule.room, 
+            AVG(schedule.student_sze) AS avg_no_of_students, 
+            room.capacity, 
+            (AVG(schedule.student_sze) / room.capacity) AS occup_level, 
+            CASE WHEN 
+                (AVG(schedule.student_sze) / room.capacity) > 1 
+                THEN 'Overused' 
+                ELSE 'Normal' 
+                END AS occup_status
+        FROM schedule
+        INNER JOIN room ON schedule.room = room.id
+        GROUP BY schedule.room, room.capacity
+    )
+SELECT occup_status, COUNT(room) AS no_of_rooms, AVG(occup_level) AS avg_occup_level
+FROM room_occupancy
+GROUP BY occup_status; 
+
+-- adhoc queries for sanity check
+SELECT *
+FROM event 
+INNER JOIN attends ON event.id = attends.event
+INNER JOIN student ON attends.student = student.id
+WHERE room = 'co.G74'; 
+
+WITH 
+    event_sze AS (
+        SELECT
+            attends.event, 
+            SUM(student.sze) AS student_sze
+        FROM attends
+        INNER JOIN student ON attends.student = student.id
+        GROUP BY attends.event
+    ), 
+SELECT *
+FROM event
+LEFT JOIN event_sze ON event.id = event_sze.event
+WHERE event.room = 'co.G74'; 
+
+-- Let's see what's the earliest time an event start, and latest when it ends
+WITH 
+    event_time AS (
+        SELECT 
+            id, 
+            dow, 
+            tod, 
+            CAST(SUBSTR(event.tod,1,2) AS INT) AS start_hour, -- all events start on the hour; this is an alternative as the time couldn't be parsed as time or datetime in sqlzoo
+            CAST(SUBSTR(event.tod,1,2) AS INT) + event.duration AS end_hour
+        FROM event
+    )
+SELECT dow, MIN(start_hour), MAX(end_hour)
+FROM event_time
+GROUP BY dow; 
+-- In most days events start at 9:00 and end at 18:00, but on Tuesday there's an event that ends at 21:00
+-- This means we want to calculate the utilisation rate by assuming rooms can be used 5 days a week, from 9:00 to 21:00 every day
+
+-- Final query
+-- To make the query more intersting, switch the criteria to capacity more than 30
+WITH 
+    count_week AS (
+        SELECT COUNT(DISTINCT week) AS no_of_weeks
+        FROM occurs
+    ), 
+    hours_per_week AS (
+        SELECT 5 * (21 - 9) AS hours_per_week -- assuming rooms can be used 5 days a week, from 9:00 to 21:00 every day
+    ), 
+    hours_per_sem AS (
+        SELECT (SELECT no_of_weeks FROM count_week) * (SELECT hours_per_week FROM hours_per_week) AS hours_per_sem
+    ), 
+    event_sze AS (
+        SELECT
+            attends.event, 
+            SUM(student.sze) AS student_sze
+        FROM attends
+        INNER JOIN student ON attends.student = student.id
+        GROUP BY attends.event
+    ), 
+    event_weeks AS (
+        SELECT 
+            event, COUNT(DISTINCT week) AS total_week
+        FROM occurs
+        GROUP BY event
+    ), 
+    schedule AS (
+        SELECT 
+            event.id AS event, 
+            event.dow, event.tod, event.duration, event.room, 
+            event_sze.student_sze, 
+            event_weeks.total_week * event.duration AS total_event_hours
+        FROM event
+        INNER JOIN event_sze ON event.id = event_sze.event
+        INNER JOIN event_weeks ON event.id = event_weeks.event
+        ), 
+    room_metrics AS (
+        SELECT
+            schedule.room, 
+            AVG(schedule.student_sze) AS avg_no_of_students, 
+            room.capacity, 
+            (AVG(schedule.student_sze) / room.capacity) AS occup_level, 
+            SUM(schedule.total_event_hours) AS total_used_hours, 
+            (SUM(schedule.total_event_hours) / (SELECT hours_per_sem FROM hours_per_sem)) AS util_rate, 
+            (SELECT hours_per_sem FROM hours_per_sem) AS total_available_hours
+        FROM schedule
+        INNER JOIN room ON schedule.room = room.id
+        WHERE room.capacity > 30
+        GROUP BY schedule.room, room.capacity
+    )
+SELECT *
+FROM room_metrics; 
